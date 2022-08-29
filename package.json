@@ -11,6 +11,7 @@
     "url": "https://github.com/peeweek/"
   },
   "dependencies": {
-    "com.unity.build-report-inspector": "0.2.2-preview"
+    "com.unity.build-report-inspector": "0.2.2-preview",
+    "com.anomalousunderdog.smartformat": "3.1.0"
   }
 }
