@@ -101,7 +101,7 @@ namespace BuildFrontend
                         Directory.CreateDirectory(buildPath);
                     }
 
-                    report = BuildPipeline.BuildPlayer(SceneList.scenePaths, buildPath + ExecutableName, Profile.Target, options);
+                    report = BuildPipeline.BuildPlayer(SceneList.scenePaths, Path.Combine(buildPath, ExecutableName), Profile.Target, options);
 
                     if (processors != null)
                     {
@@ -198,7 +198,7 @@ namespace BuildFrontend
                     Debug.LogException(e);
                     return false;
                 }
-                return File.Exists(Path.Combine(buildPath + ExecutableName));
+                return File.Exists(Path.Combine(buildPath, ExecutableName));
             }
         }
 
@@ -252,7 +252,7 @@ namespace BuildFrontend
             if (canRun)
             {
                 ProcessStartInfo info = new ProcessStartInfo();
-                info.FileName = path + ExecutableName;
+                info.FileName = Path.Combine(path, ExecutableName);
                 info.Arguments = RunWithArguments;
                 info.WorkingDirectory = path;
                 info.UseShellExecute = false;
