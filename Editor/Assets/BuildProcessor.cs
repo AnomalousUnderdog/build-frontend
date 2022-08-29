@@ -1,5 +1,5 @@
-using UnityEngine;
 using System;
+using UnityEngine;
 
 namespace BuildFrontend
 {
@@ -20,5 +20,3 @@ namespace BuildFrontend
         }
     }
 }
-
-

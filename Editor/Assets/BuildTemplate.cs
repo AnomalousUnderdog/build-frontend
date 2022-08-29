@@ -1,10 +1,10 @@
 using System;
-using UnityEngine;
+using System.Diagnostics;
+using System.IO;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
-using System.Diagnostics;
+using UnityEngine;
 using Debug = UnityEngine.Debug;
-using System.IO;
 
 namespace BuildFrontend
 {
@@ -29,10 +29,9 @@ namespace BuildFrontend
         public string BuildPath;
         public string ExecutableName;
 
-
         [Header("Build/Run Options")]
         public bool CleanupBeforeBuild = true;
-        public bool OpenInExplorer = false;
+        public bool OpenInExplorer;
         public string RunWithArguments;
         public BuildProcessor[] processors;
 
@@ -108,10 +107,6 @@ namespace BuildFrontend
                             RunBuild();
                         }
                     }
-
-
-
-
                 }
                 catch (Exception e)
                 {
@@ -152,7 +147,7 @@ namespace BuildFrontend
                 return Profile.Target == BuildTarget.StandaloneLinux64;
 #else
                 return false;
-#endif         
+#endif
             }
         }
 
@@ -197,9 +192,6 @@ namespace BuildFrontend
 
                 Process process = Process.Start(info);
             }
-
-
-
         }
     }
 
