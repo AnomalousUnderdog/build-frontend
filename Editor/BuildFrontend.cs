@@ -1,10 +1,9 @@
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
-using System;
-using Unity.BuildReportInspector;
 
 namespace BuildFrontend
 {
@@ -279,8 +278,6 @@ namespace BuildFrontend
 
         [SerializeField]
         BuildTemplate selectedTemplate;
-        BuildProfile currentProfile => selectedTemplate?.Profile;
-        SceneList currentSceneList => selectedTemplate?.SceneList;
 
         Dictionary<string, List<BuildTemplate>> m_BuildTemplates;
         List<BuildProfile> m_BuildProfiles;
@@ -661,16 +658,16 @@ namespace BuildFrontend
             public static Texture iconRed;
             static Contents()
             {
-                icon = AssetDatabase.LoadAssetAtPath<Texture>("Packages/net.peeweek.build-frontend/Editor/Icons/BuildFrontend.png");
-                var titleIcon = AssetDatabase.LoadAssetAtPath<Texture>($"Packages/net.peeweek.build-frontend/Editor/Icons/BuildFrontendTab{(EditorGUIUtility.isProSkin ? "" : "Personal")}.png");
+                icon = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/BuildFrontend.png");
+                var titleIcon = AssetDatabase.LoadAssetAtPath<Texture>($"Packages/com.anomalousunderdog.build-frontend/Editor/Icons/BuildFrontendTab{(EditorGUIUtility.isProSkin ? "" : "Personal")}.png");
                 windowTitle = new GUIContent("Build Frontend", titleIcon);
                 title = new GUIContent("Build Frontend");
 
-                iconGray = AssetDatabase.LoadAssetAtPath<Texture>("Packages/net.peeweek.build-frontend/Editor/Icons/Icons-NotRun.png");
-                iconBlue = AssetDatabase.LoadAssetAtPath<Texture>("Packages/net.peeweek.build-frontend/Editor/Icons/Icons-Running.png");
-                iconGreen = AssetDatabase.LoadAssetAtPath<Texture>("Packages/net.peeweek.build-frontend/Editor/Icons/Icons-Green.png");
-                iconOrange = AssetDatabase.LoadAssetAtPath<Texture>("Packages/net.peeweek.build-frontend/Editor/Icons/Icons-Warning.png");
-                iconRed = AssetDatabase.LoadAssetAtPath<Texture>("Packages/net.peeweek.build-frontend/Editor/Icons/Icons-Failed.png");
+                iconGray = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-NotRun.png");
+                iconBlue = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-Running.png");
+                iconGreen = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-Green.png");
+                iconOrange = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-Warning.png");
+                iconRed = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-Failed.png");
             }
 
         }
