@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using SmartFormat;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -43,6 +44,14 @@ namespace BuildFrontend
                 BuildPath = "Build/";
         }
 
+        struct BuildPathArgs
+        {
+            public string ProjectName;
+            public string BuildTemplateName;
+            public DateTime DateTimeNow;
+            public int Counter;
+        }
+
         public BuildReport DoBuild(bool run = false)
         {
             BuildReport report = null;
@@ -73,14 +82,26 @@ namespace BuildFrontend
                     if (Profile.DevPlayer)
                         options |= BuildOptions.Development;
 
-                    if (CleanupBeforeBuild && System.IO.Directory.Exists(BuildPath))
+                    string buildPath;
+                    try
                     {
-                        EditorUtility.DisplayProgressBar("Build Frontend", $"Cleaning up folder : {BuildPath}", 0.05f);
-                        System.IO.Directory.Delete(BuildPath, true);
-                        System.IO.Directory.CreateDirectory(BuildPath);
+                        buildPath = buildFullPath;
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogException(e);
+                        return null;
                     }
 
-                    report = BuildPipeline.BuildPlayer(SceneList.scenePaths, BuildPath + ExecutableName, Profile.Target, options);
+                    if (CleanupBeforeBuild && Directory.Exists(buildPath))
+                    {
+                        EditorUtility.DisplayProgressBar("Build Frontend", $"Cleaning up folder : {buildPath}", 0.05f);
+
+                        Directory.Delete(buildPath, true);
+                        Directory.CreateDirectory(buildPath);
+                    }
+
+                    report = BuildPipeline.BuildPlayer(SceneList.scenePaths, buildPath + ExecutableName, Profile.Target, options);
 
                     if (processors != null)
                     {
@@ -125,13 +146,59 @@ namespace BuildFrontend
             return report;
         }
 
-        public string buildFullPath => Path.GetFullPath(Path.Combine(Path.Combine(Application.dataPath, ".."), BuildPath));
+        public static bool FilePathHasInvalidChars(string path)
+        {
+            return (!string.IsNullOrEmpty(path) && path.IndexOfAny(Path.GetInvalidPathChars()) >= 0);
+        }
+
+        public string buildFullPath
+        {
+            get
+            {
+                var args = new BuildPathArgs();
+                args.ProjectName = Application.productName;
+                args.BuildTemplateName = name;
+                args.DateTimeNow = DateTime.Now;
+                args.Counter = 1;
+                string finalBuildPath = Smart.Format(BuildPath, args);
+
+                if (FilePathHasInvalidChars(finalBuildPath))
+                {
+                    return finalBuildPath;
+                }
+
+                string finalFullPath = Path.GetFullPath(Path.Combine(Path.Combine(Application.dataPath, ".."), finalBuildPath));
+
+                if (BuildPath.Contains("{Counter"))
+                {
+                    // increase counter if folder already exists
+                    while (Directory.Exists(finalFullPath))
+                    {
+                        args.Counter += 1;
+                        finalBuildPath = Smart.Format(BuildPath, args);
+                        finalFullPath = Path.GetFullPath(Path.Combine(Path.Combine(Application.dataPath, ".."), finalBuildPath));
+                    }
+                }
+
+                return finalFullPath;
+            }
+        }
 
         public bool foundBuildExecutable
         {
             get
             {
-                return File.Exists(Path.Combine(buildFullPath + ExecutableName));
+                string buildPath;
+                try
+                {
+                    buildPath = buildFullPath;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    return false;
+                }
+                return File.Exists(Path.Combine(buildPath + ExecutableName));
             }
         }
 
@@ -139,6 +206,7 @@ namespace BuildFrontend
         {
             get
             {
+                if (Profile == null) return false;
 #if UNITY_EDITOR_WIN
                 return Profile.Target == BuildTarget.StandaloneWindows64 || Profile.Target == BuildTarget.StandaloneWindows;
 #elif UNITY_EDITOR_OSX
@@ -149,6 +217,30 @@ namespace BuildFrontend
                 return false;
 #endif
             }
+        }
+
+        public static void OpenBuild(string path)
+        {
+            ProcessStartInfo info = new ProcessStartInfo();
+            path = $"\"{path}\"";
+
+#if UNITY_EDITOR_WIN
+            info.FileName = "explorer.exe";
+            path = path.Replace("/", "\\");
+            info.Arguments = $"/root,{path}";
+#elif UNITY_EDITOR_OSX
+                info.FileName = "open";
+                path = path.Replace("\\", "/");
+                info.Arguments = $"{path}";
+#elif UNITY_EDITOR_LINUX
+                info.FileName = "nautilus";
+                path = path.Replace("\\", "/");
+                info.Arguments = $"{path}";
+#else
+                return;
+#endif
+
+            Process process = Process.Start(info);
         }
 
         public void RunBuild()
@@ -171,26 +263,7 @@ namespace BuildFrontend
             }
             else
             {
-                ProcessStartInfo info = new ProcessStartInfo();
-                path = $"\"{path}\"";
-
-#if UNITY_EDITOR_WIN
-                info.FileName = "explorer.exe";
-                path = path.Replace("/", "\\");
-                info.Arguments = $"/root,{path}";
-#elif UNITY_EDITOR_OSX
-                info.FileName = "open";
-                path = path.Replace("\\", "/");
-                info.Arguments = $"{path}";
-#elif UNITY_EDITOR_LINUX
-                info.FileName = "nautilus";
-                path = path.Replace("\\", "/");
-                info.Arguments = $"{path}";
-#else
-                return;
-#endif
-
-                Process process = Process.Start(info);
+                OpenBuild(path);
             }
         }
     }
