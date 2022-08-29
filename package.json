@@ -1,10 +1,10 @@
 {
-  "name": "net.peeweek.build-frontend",
-  "displayName": "Build Frontend",
+  "name": "com.anomalousunderdog.build-frontend",
   "version": "2.0.0",
+  "displayName": "Build Frontend",
+  "description": "Build Frontend GUI, an Editor tool that handles multiple configurations for building and executing Players.",
   "unity": "2020.3",
-  "description": "Build Frontend GUI, an Editor tool that handles multiple configurations for building and executing Players",
-  "type": "tool",
+  "license": "MIT",
   "hideInEditor": false,
   "author": {
     "name": "PeeWeeK.NET",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "com.unity.build-report-inspector": "0.2.2-preview",
-    "com.anomalousunderdog.smartformat": "3.1.0"
-  }
+    "com.anomalousunderdog.smartformatpackage": "3.1.0"
+  },
+  "type": "tool"
 }
