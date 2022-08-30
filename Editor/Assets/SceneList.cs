@@ -1,12 +1,10 @@
 using System.Collections.Generic;
 using UnityEditor;
-using UnityEngine;
 
 namespace BuildFrontend
 {
     public class SceneList : BuildFrontendAssetBase
     {
-        [Header("Scene List")]
         public SceneAsset[] Scenes;
 
         protected override void Awake()

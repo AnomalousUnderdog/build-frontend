@@ -1,14 +1,29 @@
+using System;
 using UnityEditor;
-using UnityEngine;
 
 namespace BuildFrontend
 {
     public class BuildProfile : BuildFrontendAssetBase
     {
-        [Header("Build Profile")]
-        public bool DevPlayer;
         public BuildTarget Target;
+
+        public bool DetailedBuildReport;
+
+        [Serializable]
+        public enum BuildCompressionMethod
+        {
+            Default,
+            LZ4,
+            LZ4HighCompression
+        }
+
+        public BuildCompressionMethod CompressionMethod = BuildCompressionMethod.Default;
+
+        public bool CopyPDBFiles;
+        public bool DevelopmentBuild;
+        public bool AutoConnectProfiler;
+        public bool DeepProfiling;
+        public bool AllowScriptDebugging;
+        public bool ShaderLiveLink;
     }
-
 }
-

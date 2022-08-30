@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
@@ -29,108 +30,96 @@ namespace BuildFrontend
 
         string m_CurrentLog = "Ready to build!";
 
+        readonly GUIContent m_Content = new();
 
+        readonly Dictionary<BuildTemplate, BuildReport> m_Reports = new();
 
-        [SerializeField]
-        Dictionary<BuildTemplate, BuildReport> m_Reports = new Dictionary<BuildTemplate, BuildReport>();
-        string reportText = string.Empty;
+        readonly Queue<Action> m_Actions = new();
 
-
-        Queue<Action> m_Actions;
+        BuildTemplate m_CurrentBuild;
 
         void EnqueueAction(Action action)
         {
-            if (m_Actions == null)
-                m_Actions = new Queue<Action>();
-
             m_Actions.Enqueue(action);
         }
 
-        void OnWindowGUI()
+        void OnInspectorUpdate()
         {
-            int iconSize = 48;
-
-            using (new GUILayout.HorizontalScope(GUILayout.Height(iconSize)))
+            var nextAction = m_Actions.Count == 0 ? null : m_Actions.Dequeue();
+            if (nextAction == null)
             {
-                var rect = GUILayoutUtility.GetRect(iconSize, iconSize, Styles.Icon, GUILayout.Width(iconSize));
+                return;
+            }
+
+            var selected = Selection.activeObject;
+            try
+            {
+                nextAction.Invoke();
+            }
+            finally
+            {
+                Selection.activeObject = selected;
+            }
+        }
+
+        void OnGUI()
+        {
+            GUILayout.BeginHorizontal(Styles.HeightIconSize);
+            {
+                var rect = GUILayoutUtility.GetRect(Styles.iconSize, Styles.iconSize, Styles.Icon, Styles.WidthIconSize);
                 GUI.DrawTexture(rect, Contents.icon);
-                using (new GUILayout.VerticalScope())
+                GUILayout.BeginVertical();
                 {
                     GUILayout.Space(8);
                     GUILayout.Label(Contents.title, Styles.Title);
                     GUILayout.Label(m_CurrentLog);
                     GUILayout.Space(8);
                 }
+                GUILayout.EndVertical();
                 GUILayout.Space(8);
 
-                using (new GUILayout.VerticalScope(GUILayout.Width(120)))
+                GUILayout.BeginVertical(Styles.Width120);
                 {
                     GUILayout.Space(8);
-                    if (GUILayout.Button("Build All", Styles.BuildButton, GUILayout.Height(32)))
+                    if (GUILayout.Button("Build All", Styles.BuildButton, Styles.Height32))
                     {
                         DoAllBuild();
                     }
                     GUILayout.Space(8);
                 }
+                GUILayout.EndVertical();
                 GUILayout.Space(8);
             }
+            GUILayout.EndHorizontal();
 
-            var r = GUILayoutUtility.GetRect(-1, 1, GUILayout.ExpandWidth(true));
+            var r = GUILayoutUtility.GetRect(-1, 1, Styles.ExpandWidth);
             EditorGUI.DrawRect(r, Color.black);
 
-            using (new GUILayout.HorizontalScope())
+            GUILayout.BeginHorizontal();
             {
                 DrawTemplateList();
                 DrawReport();
             }
-        }
-
-        BuildTemplate m_CurrentBuild;
-
-        private void OnGUI()
-        {
-            if (m_Actions == null)
-                m_Actions = new Queue<Action>();
-
-            Action nextAction = m_Actions.Count == 0 ? null : m_Actions.Dequeue();
-
-            try
-            {
-                OnWindowGUI();
-            }
-            finally
-            {
-                if (nextAction != null)
-                {
-                    var selected = Selection.activeObject;
-                    try
-                    {
-                        nextAction.Invoke();
-                    }
-                    finally
-                    {
-                        Selection.activeObject = selected;
-                    }
-
-                }
-            }
+            GUILayout.EndHorizontal();
         }
 
         void DrawReport()
         {
             if (selectedTemplate == null)
             {
-                using (new GUILayout.VerticalScope())
+                GUILayout.BeginVertical();
                 {
                     GUILayout.FlexibleSpace();
-                    using (new GUILayout.HorizontalScope(GUILayout.Height(32)))
+                    GUILayout.BeginHorizontal(Styles.Height32);
                     {
                         GUILayout.Space(180);
                         EditorGUILayout.HelpBox("Please select a build template in the left pane list", MessageType.Info);
                         GUILayout.Space(180);
                     }
+                    GUILayout.EndHorizontal();
                     GUILayout.FlexibleSpace();
                 }
+                GUILayout.EndVertical();
                 return;
             }
 
@@ -148,8 +137,6 @@ namespace BuildFrontend
                 EditorGUILayout.HelpBox("No Build report has been generated yet, please build this template first", MessageType.Info);
 
             EditorGUILayout.EndScrollView();
-
-            return;
         }
 
         void DoAllBuild()
@@ -180,9 +167,9 @@ namespace BuildFrontend
 
         void DrawTemplateList()
         {
-            templateScroll = GUILayout.BeginScrollView(templateScroll, false, true, GUILayout.Width(240));
+            templateScroll = GUILayout.BeginScrollView(templateScroll, false, true, Styles.Width240);
 
-            using (new GUILayout.VerticalScope(EditorStyles.label))
+            GUILayout.BeginVertical(EditorStyles.label);
             {
                 foreach (var catKVP in m_BuildTemplates)
                 {
@@ -190,7 +177,7 @@ namespace BuildFrontend
 
                     foreach (var template in catKVP.Value)
                     {
-                        GUILayoutUtility.GetRect(-1, 24, GUILayout.ExpandWidth(true));
+                        GUILayoutUtility.GetRect(-1, 24, Styles.ExpandWidth);
 
                         // Draw background box
 
@@ -273,6 +260,7 @@ namespace BuildFrontend
                     }
                 }
             }
+            GUILayout.EndVertical();
             EditorGUILayout.EndScrollView();
         }
 
@@ -320,7 +308,7 @@ namespace BuildFrontend
             }
         }
 
-        string FormatSize(ulong byteSize)
+        static string FormatSize(ulong byteSize)
         {
             double size = byteSize;
             if (size < 1024) // Bytes
@@ -343,38 +331,39 @@ namespace BuildFrontend
 
         void FormatHeaderGUI(BuildTemplate template, BuildReport report = null)
         {
-            using (new GUILayout.HorizontalScope())
+            GUILayout.BeginHorizontal();
             {
-                using (new GUILayout.VerticalScope())
+                GUILayout.BeginVertical();
                 {
                     GUILayout.Label($"{(template.Name == string.Empty ? template.name : template.Name)} {(template.Category == string.Empty ? "" : $"({template.Category})")}", Styles.boldLabelLarge);
 
-                    using (new GUILayout.HorizontalScope())
+                    GUILayout.BeginHorizontal();
                     {
                         if (report != null)
                         {
                             var summary = report.summary;
                             if (summary.result == BuildResult.Succeeded)
-                                GUILayout.Label(Contents.buildSucceeded, GUILayout.Width(32));
+                                GUILayout.Label(Contents.buildSucceeded, Styles.Width32);
                             else if (summary.result != BuildResult.Unknown)
-                                GUILayout.Label(Contents.buildFailed, GUILayout.Width(32));
+                                GUILayout.Label(Contents.buildFailed, Styles.Width32);
 
                             GUILayout.Label(summary.result.ToString(), Styles.boldLabelLarge);
                         }
                         else
                         {
-                            GUILayout.Label(Contents.buildPending, GUILayout.Width(32));
+                            GUILayout.Label(Contents.buildPending, Styles.Width32);
                             GUILayout.Label("Build not yet started", Styles.boldLabelLarge);
                         }
                     }
+                    GUILayout.EndHorizontal();
                 }
+                GUILayout.EndVertical();
 
                 GUILayout.FlexibleSpace();
 
-
-                using (new GUILayout.VerticalScope(GUILayout.Width(120)))
+                GUILayout.BeginVertical(Styles.Width120);
                 {
-                    using (new GUILayout.HorizontalScope())
+                    GUILayout.BeginHorizontal();
                     {
                         EditorGUI.BeginDisabledGroup(template == null);
 
@@ -382,16 +371,17 @@ namespace BuildFrontend
                         {
                             EnqueueBuildTemplate(template, false);
                         }
-                        if (GUILayout.Button("+ Run", Styles.MiniButtonRight, GUILayout.Width(48)))
+                        if (GUILayout.Button("+ Run", Styles.MiniButtonRight, Styles.Width48))
                         {
                             EnqueueBuildTemplate(template, true);
                         }
                         EditorGUI.EndDisabledGroup();
                     }
+                    GUILayout.EndHorizontal();
 
-                    if(template.canRunFromEditor && !template.OpenInExplorer)
+                    if (template.CanRunFromEditor && !template.OpenInExplorer)
                     {
-                        EditorGUI.BeginDisabledGroup(template == null || !template.foundBuildExecutable);
+                        EditorGUI.BeginDisabledGroup(template == null || !template.BuildExecutableExists);
 
                         if (GUILayout.Button("Run Last Build", Styles.MiniButton))
                         {
@@ -416,15 +406,14 @@ namespace BuildFrontend
                         }
                     }
                 }
-
+                GUILayout.EndVertical();
             }
+            GUILayout.EndHorizontal();
 
             GUILayout.Space(8);
-            var r = GUILayoutUtility.GetRect(-1, 1, GUILayout.ExpandWidth(true));
+            var r = GUILayoutUtility.GetRect(-1, 1, Styles.ExpandWidth);
             EditorGUI.DrawRect(r, new Color(0, 0, 0, 0.5f));
             GUILayout.Space(16);
-
-            return;
         }
 
         void EnqueueBuildTemplate(BuildTemplate template, bool runAfterBuild = false)
@@ -454,8 +443,6 @@ namespace BuildFrontend
             EnqueueAction(() => { Repaint(); });
         }
 
-
-
         void FormatReportGUI(BuildTemplate template, BuildReport report)
         {
             var summary = report.summary;
@@ -466,20 +453,40 @@ namespace BuildFrontend
             }
 
             GUILayout.Space(8);
-            GUILayout.Label("Total Build Time :" + summary.totalTime);
+            GUILayout.Label($"Total Build Time : {summary.totalTime}");
             EditorGUILayout.LabelField($"Build Size : {FormatSize(summary.totalSize)} ");
 
             if (summary.totalErrors > 0)
             {
-                GUILayout.Label(new GUIContent($"{(int)summary.totalErrors} Errors", Contents.errorIconSmall.image));
+                m_Content.image = Contents.errorIconSmall.image;
+                m_Content.text = $"{summary.totalErrors} Errors";
+                GUILayout.Label(m_Content);
             }
 
             if (summary.totalWarnings > 0)
             {
-                GUILayout.Label(new GUIContent($"{(int)summary.totalWarnings} Warnings", Contents.warnIconSmall.image));
+                m_Content.image = Contents.warnIconSmall.image;
+                m_Content.text = $"{summary.totalWarnings} Warnings";
+                GUILayout.Label(m_Content);
             }
 
-            EditorGUILayout.TextField("Output Path", summary.outputPath);
+            GUILayout.BeginHorizontal();
+            {
+                EditorGUILayout.TextField("Output Path", report.summary.outputPath);
+
+                if (GUILayout.Button("Open Folder", Styles.NoExpandWidth))
+                {
+                    DirectoryInfo parentDir = Directory.GetParent(report.summary.outputPath);
+                    string parentPath = parentDir?.FullName;
+                    BuildTemplate.OpenBuild(parentPath);
+                }
+
+                if (GUILayout.Button("Run", Styles.NoExpandWidth))
+                {
+                    BuildTemplate.RunBuild(report.summary.outputPath);
+                }
+            }
+            GUILayout.EndHorizontal();
 
             if (report.strippingInfo != null)
             {
@@ -500,14 +507,14 @@ namespace BuildFrontend
             {
                 string prefName = $"BuildFrontend.Foldout'{step.name}'";
 
-                using (new GUILayout.HorizontalScope())
+                GUILayout.BeginHorizontal();
                 {
                     if (step.messages.Any(o => o.type == LogType.Error || o.type == LogType.Assert || o.type == LogType.Exception))
-                        GUILayout.Label(Contents.errorIconSmall, Styles.Icon, GUILayout.Width(16));
+                        GUILayout.Label(Contents.errorIconSmall, Styles.Icon, Styles.Width16);
                     else if (step.messages.Any(o => o.type == LogType.Warning))
-                        GUILayout.Label(Contents.warnIconSmall, Styles.Icon, GUILayout.Width(16));
+                        GUILayout.Label(Contents.warnIconSmall, Styles.Icon, Styles.Width16);
                     else
-                        GUILayout.Label(Contents.successIcon, Styles.Icon, GUILayout.Width(16));
+                        GUILayout.Label(Contents.successIcon, Styles.Icon, Styles.Width16);
 
                     if (step.messages.Length > 0)
                     {
@@ -522,8 +529,8 @@ namespace BuildFrontend
                     {
                         EditorGUILayout.LabelField(step.name);
                     }
-
                 }
+                GUILayout.EndHorizontal();
 
                 EditorGUI.indentLevel++;
                 if (EditorPrefs.GetBool(prefName, false))
@@ -546,7 +553,7 @@ namespace BuildFrontend
             GUILayout.Space(128);
         }
 
-        static class Styles
+        public static class Styles
         {
             public static GUIStyle BuildButton;
             public static GUIStyle MiniButton;
@@ -559,6 +566,22 @@ namespace BuildFrontend
             public static GUIStyle boldLabelLarge;
             public static GUIStyle scrollView;
             public static GUIStyle hoverBG;
+
+            public const int iconSize = 48;
+
+            public static readonly GUILayoutOption[] ExpandWidth = {GUILayout.ExpandWidth(true)};
+            public static readonly GUILayoutOption[] NoExpandWidth = {GUILayout.ExpandWidth(false)};
+
+            public static readonly GUILayoutOption[] Width16 = {GUILayout.Width(16)};
+            public static readonly GUILayoutOption[] Width32 = { GUILayout.Width(32)};
+            public static readonly GUILayoutOption[] Width48 = { GUILayout.Width(48)};
+            public static readonly GUILayoutOption[] Width120 = {GUILayout.Width(120)};
+            public static readonly GUILayoutOption[] Width240 = {GUILayout.Width(240)};
+
+            public static readonly GUILayoutOption[] Height32 = {GUILayout.Height(32)};
+
+            public static readonly GUILayoutOption[] WidthIconSize = {GUILayout.Width(iconSize)};
+            public static readonly GUILayoutOption[] HeightIconSize = {GUILayout.Height(iconSize)};
 
 
             static Styles()
@@ -622,7 +645,6 @@ namespace BuildFrontend
 
 
             }
-
         }
         static class Contents
         {
@@ -656,6 +678,7 @@ namespace BuildFrontend
             public static Texture iconGreen;
             public static Texture iconOrange;
             public static Texture iconRed;
+
             static Contents()
             {
                 icon = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/BuildFrontend.png");
@@ -669,7 +692,6 @@ namespace BuildFrontend
                 iconOrange = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-Warning.png");
                 iconRed = AssetDatabase.LoadAssetAtPath<Texture>("Packages/com.anomalousunderdog.build-frontend/Editor/Icons/Icons-Failed.png");
             }
-
         }
     }
 }

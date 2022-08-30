@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using SmartFormat;
@@ -11,20 +12,11 @@ namespace BuildFrontend
 {
     public class BuildTemplate : BuildFrontendAssetBase
     {
-        public bool BuildEnabled
-        {
-            get { return EditorPrefs.GetBool(preferenceName, true); }
-            set { EditorPrefs.SetBool(preferenceName, value); }
-        }
-
-        string preferenceName
-        {
-            get { return $"BuildFrontend.{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(this))}.Enabled"; }
-        }
-
         [Header("Configuration")]
         public BuildProfile Profile;
         public SceneList SceneList;
+        public ScriptingDefineList ScriptingDefineList;
+        public ScriptDefine[] EnabledScriptDefines;
 
         [Header("Output Options")]
         public string BuildPath;
@@ -33,15 +25,217 @@ namespace BuildFrontend
         [Header("Build/Run Options")]
         public bool CleanupBeforeBuild = true;
         public bool OpenInExplorer;
+
         public string RunWithArguments;
-        public BuildProcessor[] processors;
+
+        public BuildProcessor[] Processors;
+
+        [Serializable]
+        public struct ScriptDefine
+        {
+            public string DefineName;
+            public bool Enable;
+        }
+
+        public bool BuildEnabled
+        {
+            get => EditorPrefs.GetBool(PreferenceName, true);
+            set => EditorPrefs.SetBool(PreferenceName, value);
+        }
+
+        string PreferenceName => $"BuildFrontend.{AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(this))}.Enabled";
+
+        // =================================================================================
 
         protected override void Awake()
         {
             base.Awake();
 
-            if (BuildPath == null)
-                BuildPath = "Build/";
+            BuildPath ??= "Build/";
+        }
+
+        public BuildReport DoBuild(bool run = false)
+        {
+            if (!BuildEnabled)
+            {
+                Debug.LogWarning("Build is disabled");
+                return null;
+            }
+
+            BuildReport report = null;
+
+            try
+            {
+                bool prevCopyPdbFiles = UnityEditor.WindowsStandalone.UserBuildSettings.copyPDBFiles;
+
+                if (Processors != null)
+                {
+                    foreach (var processor in Processors)
+                    {
+                        if (processor == null)
+                            continue;
+
+                        EditorUtility.DisplayProgressBar("Build Frontend", $"Pre-Processing : {processor.name}",
+                            0.0f);
+                        if (!processor.OnPreProcess(this, run))
+                        {
+                            throw new BuildProcessorException(processor, this);
+                        }
+                    }
+                }
+
+                EditorUtility.DisplayProgressBar("Build Frontend", $"Building player : {name}", 0.0f);
+
+                var buildOptions = new BuildPlayerOptions();
+
+                // -----------------------
+
+                buildOptions.options = BuildOptions.None;
+                if (Profile.DevelopmentBuild)
+                {
+                    buildOptions.options |= BuildOptions.Development;
+                    if (Profile.AutoConnectProfiler)
+                    {
+                        buildOptions.options |= BuildOptions.ConnectWithProfiler;
+                    }
+
+                    if (Profile.DeepProfiling)
+                    {
+                        buildOptions.options |= BuildOptions.EnableDeepProfilingSupport;
+                    }
+
+                    if (Profile.AllowScriptDebugging)
+                    {
+                        buildOptions.options |= BuildOptions.AllowDebugging;
+                    }
+
+                    if (Profile.ShaderLiveLink)
+                    {
+                        buildOptions.options |= BuildOptions.ShaderLivelinkSupport;
+                    }
+
+                    UnityEditor.WindowsStandalone.UserBuildSettings.copyPDBFiles = Profile.CopyPDBFiles;
+                }
+                else
+                {
+                    UnityEditor.WindowsStandalone.UserBuildSettings.copyPDBFiles = false;
+                }
+
+                if (Profile.DetailedBuildReport)
+                {
+                    buildOptions.options |= BuildOptions.DetailedBuildReport;
+                }
+
+                switch (Profile.CompressionMethod)
+                {
+                    case BuildProfile.BuildCompressionMethod.LZ4:
+                        buildOptions.options |= BuildOptions.CompressWithLz4;
+                        break;
+                    case BuildProfile.BuildCompressionMethod.LZ4HighCompression:
+                        buildOptions.options |= BuildOptions.CompressWithLz4HC;
+                        break;
+                }
+
+                // -----------------------
+
+                var scriptingDefines = new List<string>();
+                for (int n = 0, len = EnabledScriptDefines.Length; n < len; ++n)
+                {
+                    if (!EnabledScriptDefines[n].Enable)
+                    {
+                        continue;
+                    }
+
+                    scriptingDefines.Add(EnabledScriptDefines[n].DefineName);
+                }
+
+                buildOptions.extraScriptingDefines = scriptingDefines.ToArray();
+
+                // -----------------------
+
+                buildOptions.target = Profile.Target;
+                buildOptions.targetGroup = BuildPipeline.GetBuildTargetGroup(Profile.Target);
+                buildOptions.subtarget = 0;
+
+                // -----------------------
+
+                string buildPath;
+                try
+                {
+                    buildPath = BuildFullPath;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e, this);
+                    return null;
+                }
+
+                if (CleanupBeforeBuild && Directory.Exists(buildPath))
+                {
+                    EditorUtility.DisplayProgressBar("Build Frontend", $"Cleaning up folder : {buildPath}", 0.05f);
+
+                    Directory.Delete(buildPath, true);
+                    Directory.CreateDirectory(buildPath);
+                }
+
+                buildOptions.locationPathName = Path.Combine(buildPath, ExecutableName);
+
+                // -----------------------
+
+                buildOptions.scenes = SceneList.scenePaths;
+
+                // -----------------------
+
+                report = BuildPipeline.BuildPlayer(buildOptions);
+
+                // -----------------------
+
+                if (Processors != null)
+                {
+                    foreach (var processor in Processors)
+                    {
+                        if (processor == null)
+                            continue;
+
+                        EditorUtility.DisplayProgressBar("Build Frontend", $"Post-Processing : {processor.name}",
+                            0.0f);
+                        if (!processor.OnPostProcess(this, run))
+                        {
+                            throw new BuildProcessorException(processor, this);
+                        }
+                    }
+                }
+
+                if (run)
+                {
+                    if (report.summary.result == BuildResult.Succeeded ||
+                        EditorUtility.DisplayDialog("Run Failed Build",
+                            "The build has failed or has been canceled, do you want to attempt to run previous build instead?",
+                            "Yes", "No"))
+                    {
+                        RunBuild();
+                    }
+                }
+
+                UnityEditor.WindowsStandalone.UserBuildSettings.copyPDBFiles = prevCopyPdbFiles;
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e, this);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            return report;
+        }
+
+        // =================================================================================
+
+        public static bool FilePathHasInvalidChars(string path)
+        {
+            return (!string.IsNullOrEmpty(path) && path.IndexOfAny(Path.GetInvalidPathChars()) >= 0);
         }
 
         struct BuildPathArgs
@@ -52,114 +246,17 @@ namespace BuildFrontend
             public int Counter;
         }
 
-        public BuildReport DoBuild(bool run = false)
-        {
-            BuildReport report = null;
-
-            if (BuildEnabled)
-            {
-                try
-                {
-                    if(processors != null)
-                    {
-                        foreach(var processor in processors)
-                        {
-                            if (processor == null)
-                                continue;
-
-                            EditorUtility.DisplayProgressBar("Build Frontend", $"Pre-Processing : {processor.name}", 0.0f);
-                            if(!processor.OnPreProcess(this, run))
-                            {
-                                throw new BuildProcessorException(processor, this);
-                            }
-                        }
-                    }
-
-                    EditorUtility.DisplayProgressBar("Build Frontend", $"Building player : {name}", 0.0f);
-
-                    BuildOptions options = BuildOptions.None;
-
-                    if (Profile.DevPlayer)
-                        options |= BuildOptions.Development;
-
-                    string buildPath;
-                    try
-                    {
-                        buildPath = buildFullPath;
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.LogException(e);
-                        return null;
-                    }
-
-                    if (CleanupBeforeBuild && Directory.Exists(buildPath))
-                    {
-                        EditorUtility.DisplayProgressBar("Build Frontend", $"Cleaning up folder : {buildPath}", 0.05f);
-
-                        Directory.Delete(buildPath, true);
-                        Directory.CreateDirectory(buildPath);
-                    }
-
-                    report = BuildPipeline.BuildPlayer(SceneList.scenePaths, Path.Combine(buildPath, ExecutableName), Profile.Target, options);
-
-                    if (processors != null)
-                    {
-                        foreach (var processor in processors)
-                        {
-                            if (processor == null)
-                                continue;
-
-                            EditorUtility.DisplayProgressBar("Build Frontend", $"Post-Processing : {processor.name}", 0.0f);
-                            if (!processor.OnPostProcess(this, run))
-                            {
-                                throw new BuildProcessorException(processor, this);
-                            }
-                        }
-                    }
-
-                    if (run)
-                    {
-                        if (
-                            report.summary.result == BuildResult.Succeeded ||
-                            EditorUtility.DisplayDialog("Run Failed Build", "The build has failed or has been canceled, do you want to attempt to run previous build instead?", "Yes", "No")
-                          )
-                        {
-                            RunBuild();
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    Debug.LogException(e, this);
-                }
-                finally
-                {
-                    EditorUtility.ClearProgressBar();
-                }
-            }
-            else
-            {
-                Debug.LogWarning("Build is disabled");
-            }
-
-            return report;
-        }
-
-        public static bool FilePathHasInvalidChars(string path)
-        {
-            return (!string.IsNullOrEmpty(path) && path.IndexOfAny(Path.GetInvalidPathChars()) >= 0);
-        }
-
-        public string buildFullPath
+        public string BuildFullPath
         {
             get
             {
-                var args = new BuildPathArgs();
-                args.ProjectName = Application.productName;
-                args.BuildTemplateName = name;
-                args.DateTimeNow = DateTime.Now;
-                args.Counter = 1;
+                var args = new BuildPathArgs
+                {
+                    ProjectName = Application.productName,
+                    BuildTemplateName = name,
+                    DateTimeNow = DateTime.Now,
+                    Counter = 1,
+                };
                 string finalBuildPath = Smart.Format(BuildPath, args);
 
                 if (FilePathHasInvalidChars(finalBuildPath))
@@ -184,14 +281,14 @@ namespace BuildFrontend
             }
         }
 
-        public bool foundBuildExecutable
+        public bool BuildExecutableExists
         {
             get
             {
                 string buildPath;
                 try
                 {
-                    buildPath = buildFullPath;
+                    buildPath = BuildFullPath;
                 }
                 catch (Exception e)
                 {
@@ -202,13 +299,16 @@ namespace BuildFrontend
             }
         }
 
-        public bool canRunFromEditor
+        /// <summary>
+        /// Returns false for builds that we can't run in this PC (mobile, console, standalone builds for a different OS, etc.).
+        /// </summary>
+        public bool CanRunFromEditor
         {
             get
             {
                 if (Profile == null) return false;
 #if UNITY_EDITOR_WIN
-                return Profile.Target == BuildTarget.StandaloneWindows64 || Profile.Target == BuildTarget.StandaloneWindows;
+                return Profile.Target is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneWindows;
 #elif UNITY_EDITOR_OSX
                 return Profile.Target == BuildTarget.StandaloneOSX;
 #elif UNITY_EDITOR_LINUX
@@ -221,7 +321,7 @@ namespace BuildFrontend
 
         public static void OpenBuild(string path)
         {
-            ProcessStartInfo info = new ProcessStartInfo();
+            var info = new ProcessStartInfo();
             path = $"\"{path}\"";
 
 #if UNITY_EDITOR_WIN
@@ -229,36 +329,54 @@ namespace BuildFrontend
             path = path.Replace("/", "\\");
             info.Arguments = $"/root,{path}";
 #elif UNITY_EDITOR_OSX
-                info.FileName = "open";
-                path = path.Replace("\\", "/");
-                info.Arguments = $"{path}";
+            info.FileName = "open";
+            path = path.Replace("\\", "/");
+            info.Arguments = $"{path}";
 #elif UNITY_EDITOR_LINUX
-                info.FileName = "nautilus";
-                path = path.Replace("\\", "/");
-                info.Arguments = $"{path}";
+            info.FileName = "nautilus";
+            path = path.Replace("\\", "/");
+            info.Arguments = $"{path}";
 #else
-                return;
+            // unknown OS
+            return;
 #endif
 
-            Process process = Process.Start(info);
+            Process.Start(info);
+        }
+
+        public static void RunBuild(string path, string args = null)
+        {
+            var info = new ProcessStartInfo();
+            info.FileName = path;
+            info.Arguments = string.IsNullOrEmpty(args) ? string.Empty : args;
+
+            var parentDir = Directory.GetParent(path);
+            string parentPath = parentDir?.FullName;
+
+            info.WorkingDirectory = string.IsNullOrEmpty(parentPath) ? string.Empty : parentPath;
+            info.UseShellExecute = false;
+
+            EditorUtility.DisplayProgressBar("Build Frontend", $"Running Player : {info.FileName}", 1.0f);
+            Process.Start(info);
+            EditorUtility.ClearProgressBar();
         }
 
         public void RunBuild()
         {
-            bool canRun = Profile != null && !OpenInExplorer && canRunFromEditor;
+            bool canRun = Profile != null && !OpenInExplorer && CanRunFromEditor;
 
-            string path = buildFullPath;
+            string path = BuildFullPath;
 
             if (canRun)
             {
-                ProcessStartInfo info = new ProcessStartInfo();
+                var info = new ProcessStartInfo();
                 info.FileName = Path.Combine(path, ExecutableName);
                 info.Arguments = RunWithArguments;
                 info.WorkingDirectory = path;
                 info.UseShellExecute = false;
 
                 EditorUtility.DisplayProgressBar("Build Frontend", $"Running Player : {info.FileName}", 1.0f);
-                Process process = Process.Start(info);
+                Process.Start(info);
                 EditorUtility.ClearProgressBar();
             }
             else
