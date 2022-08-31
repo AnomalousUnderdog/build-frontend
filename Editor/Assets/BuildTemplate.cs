@@ -199,7 +199,7 @@ namespace BuildFrontend
 
                         EditorUtility.DisplayProgressBar("Build Frontend", $"Post-Processing : {processor.name}",
                             0.0f);
-                        if (!processor.OnPostProcess(this, run))
+                        if (!processor.OnPostProcess(this, report, run))
                         {
                             throw new BuildProcessorException(processor, this);
                         }

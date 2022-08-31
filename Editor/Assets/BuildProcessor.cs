@@ -6,7 +6,7 @@ namespace BuildFrontend
     public abstract class BuildProcessor: ScriptableObject
     {
         public abstract bool OnPreProcess(BuildTemplate template, bool wantRun);
-        public abstract bool OnPostProcess(BuildTemplate template, bool wantRun);
+        public abstract bool OnPostProcess(BuildTemplate template, UnityEditor.Build.Reporting.BuildReport report, bool wantRun);
     }
 
     public class BuildProcessorException: Exception
