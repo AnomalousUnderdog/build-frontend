@@ -88,6 +88,18 @@ namespace BuildFrontend
 
                 var buildOptions = new BuildPlayerOptions();
 
+                if (Profile == null)
+                {
+                    Debug.LogError($"Aborting build for {name}. No Build Profile is assigned.", this);
+                    return null;
+                }
+
+                if (SceneList == null)
+                {
+                    Debug.LogError($"Aborting build for {name}. No Scene List is assigned.", this);
+                    return null;
+                }
+
                 // -----------------------
 
                 buildOptions.options = BuildOptions.None;
@@ -183,6 +195,12 @@ namespace BuildFrontend
                 // -----------------------
 
                 buildOptions.scenes = SceneList.scenePaths;
+
+                if (buildOptions.scenes.Length == 0)
+                {
+                    Debug.LogError($"Aborting build for {name}. No usable scenes could be included from {SceneList.name}.", SceneList);
+                    return null;
+                }
 
                 // -----------------------
 
