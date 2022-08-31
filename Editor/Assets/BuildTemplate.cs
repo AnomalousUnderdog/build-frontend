@@ -241,6 +241,8 @@ namespace BuildFrontend
         struct BuildPathArgs
         {
             public string ProjectName;
+            public string ProjectVersion;
+            public string UnityVersion;
             public string BuildTemplateName;
             public DateTime DateTimeNow;
             public int Counter;
@@ -253,6 +255,8 @@ namespace BuildFrontend
                 var args = new BuildPathArgs
                 {
                     ProjectName = Application.productName,
+                    ProjectVersion = Application.version,
+                    UnityVersion = Application.unityVersion,
                     BuildTemplateName = name,
                     DateTimeNow = DateTime.Now,
                     Counter = 1,
