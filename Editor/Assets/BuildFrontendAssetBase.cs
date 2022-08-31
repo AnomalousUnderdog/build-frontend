@@ -2,7 +2,7 @@ using UnityEngine;
 
 public abstract class BuildFrontendAssetBase : ScriptableObject
 {
-    public string MenuEntry { get { return Category + (Category == "" ? "" : "/") + Name; } }
+    public string MenuEntry => $"{Category}{(string.IsNullOrEmpty(Category) ? string.Empty : "/")}{Name}";
 
     [Header("Categorization")]
     public string Name = "";
@@ -10,8 +10,6 @@ public abstract class BuildFrontendAssetBase : ScriptableObject
 
     protected virtual void Awake()
     {
-        if (Name == null)
-            Name = name;
+        Name ??= name;
     }
-
 }

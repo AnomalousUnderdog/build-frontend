@@ -11,15 +11,18 @@ namespace BuildFrontend
         {
             base.Awake();
 
-            if (Scenes == null)
-                Scenes = new SceneAsset[0];
+            Scenes ??= new SceneAsset[0];
         }
 
-        public string[] scenePaths
+        public string[] ScenePaths
         {
             get
             {
-                if (Scenes == null) return null;
+                if (Scenes == null)
+                {
+                    return null;
+                }
+
                 var scenes = new List<string>();
                 foreach (var scene in Scenes)
                 {

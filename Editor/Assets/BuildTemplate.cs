@@ -33,8 +33,8 @@ namespace BuildFrontend
         [Serializable]
         public struct ScriptDefine
         {
-            public string DefineName;
             public bool Enable;
+            public string DefineName;
         }
 
         public bool BuildEnabled
@@ -167,7 +167,8 @@ namespace BuildFrontend
 
                 buildOptions.target = Profile.Target;
                 buildOptions.targetGroup = BuildPipeline.GetBuildTargetGroup(Profile.Target);
-                buildOptions.subtarget = 0;
+
+                buildOptions.subtarget = 0; //todo look into this
 
                 // -----------------------
 
@@ -194,7 +195,7 @@ namespace BuildFrontend
 
                 // -----------------------
 
-                buildOptions.scenes = SceneList.scenePaths;
+                buildOptions.scenes = SceneList.ScenePaths;
 
                 if (buildOptions.scenes.Length == 0)
                 {
