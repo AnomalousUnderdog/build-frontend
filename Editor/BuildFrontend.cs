@@ -559,6 +559,7 @@ namespace BuildFrontend
             public static GUIStyle MiniButton;
             public static GUIStyle MiniButtonLeft;
             public static GUIStyle MiniButtonRight;
+            public static GUIStyle MiniIconButton;
             public static GUIStyle progressBarItem;
             public static GUIStyle SelectedProfile;
             public static GUIStyle Title;
@@ -603,6 +604,13 @@ namespace BuildFrontend
                 MiniButtonRight.fixedHeight = 22;
                 MiniButtonRight.fontSize = 12;
 
+                MiniIconButton = new GUIStyle(EditorStyles.miniButton);
+                MiniIconButton.imagePosition = ImagePosition.ImageAbove;
+                MiniIconButton.alignment = TextAnchor.MiddleCenter;
+                MiniIconButton.padding = new RectOffset(0, 0, 0, 0);
+                MiniIconButton.fixedWidth = 0;
+                MiniIconButton.fixedHeight = 0;
+
                 SelectedProfile = new GUIStyle(EditorStyles.label);
                 var pink = EditorGUIUtility.isProSkin ? new Color(1.0f, 0.2f, 0.5f, 1.0f) : new Color(1.0f, 0.05f, 0.4f, 1.0f);
                 SelectedProfile.active.textColor = pink;
@@ -646,7 +654,8 @@ namespace BuildFrontend
 
             }
         }
-        static class Contents
+
+        public static class Contents
         {
             public static GUIContent windowTitle;
             public static GUIContent title;

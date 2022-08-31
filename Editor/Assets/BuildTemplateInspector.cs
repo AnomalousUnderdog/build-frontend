@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEditorInternal;
 using UnityEngine;
 
@@ -58,10 +60,16 @@ namespace BuildFrontend
 
         Texture2D _infoIcon;
         Texture2D _errorIcon;
+        Texture _plusIcon;
 
         GUISkin _skin;
+        GUIStyle _smallButton;
 
         readonly GUIContent _label = new();
+        readonly GUIContent _addDefineLabel = new();
+        readonly GUIContent _duplicateDefineLabel = new();
+        readonly GUIContent _duplicateSceneLabel = new();
+        readonly GUIContent _loadScenes = new();
 
         ReorderableList _scenesReorderableList;
         ReorderableList _scriptingDefineReorderableList;
@@ -69,6 +77,66 @@ namespace BuildFrontend
         // ------------------------------------------------------
 
         const int INDENT = 15;
+
+        static bool ArrayPropertyContains(SerializedProperty arrayProperty, string valueToCheck)
+        {
+            for (int n = 0, len = arrayProperty.arraySize; n < len; ++n)
+            {
+                if (arrayProperty.GetArrayElementAtIndex(n).stringValue == valueToCheck)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        static bool ArrayPropertyContains(SerializedProperty arrayProperty, string relativeProperty, string valueToCheck)
+        {
+            for (int n = 0, len = arrayProperty.arraySize; n < len; ++n)
+            {
+                if (arrayProperty.GetArrayElementAtIndex(n).FindPropertyRelative(relativeProperty).stringValue == valueToCheck)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        static int ArrayPropertyIndexOf(SerializedProperty arrayProperty, string valueToCheck)
+        {
+            for (int n = 0, len = arrayProperty.arraySize; n < len; ++n)
+            {
+                if (arrayProperty.GetArrayElementAtIndex(n).stringValue == valueToCheck)
+                {
+                    return n;
+                }
+            }
+            return -1;
+        }
+
+        static int ArrayPropertyIndexOf(SerializedProperty arrayProperty, string relativeProperty, string valueToCheck)
+        {
+            for (int n = 0, len = arrayProperty.arraySize; n < len; ++n)
+            {
+                if (arrayProperty.GetArrayElementAtIndex(n).FindPropertyRelative(relativeProperty).stringValue == valueToCheck)
+                {
+                    return n;
+                }
+            }
+            return -1;
+        }
+
+        static int ArrayPropertyIndexOf(SerializedProperty arrayProperty, UnityEngine.Object valueToCheck)
+        {
+            for (int n = 0, len = arrayProperty.arraySize; n < len; ++n)
+            {
+                if (arrayProperty.GetArrayElementAtIndex(n).objectReferenceValue == valueToCheck)
+                {
+                    return n;
+                }
+            }
+            return -1;
+        }
 
         // =================================================================================
 
@@ -94,34 +162,72 @@ namespace BuildFrontend
                 .FindStyle("CN EntryInfoIcon")?.normal.background;
             _errorIcon = EditorGUIUtility.GetBuiltinSkin(EditorSkin.Inspector)
                 .FindStyle("CN EntryErrorIcon")?.normal.background;
+            _plusIcon = EditorGUIUtility.IconContent("Toolbar Plus").image;
+
+            _addDefineLabel.image = _plusIcon;
+            _addDefineLabel.tooltip = "This Define is in the Build Template, but not found in the Scripting Define List. Click to add it.";
+
+            _duplicateDefineLabel.image = BuildFrontend.Contents.warnIconSmall.image;
+            _duplicateDefineLabel.tooltip = "Should not have duplicate defines. This duplicate will be ignored.";
+
+            _duplicateSceneLabel.image = BuildFrontend.Contents.warnIconSmall.image;
+            _duplicateSceneLabel.tooltip = "Should not have duplicate scenes. This scene will be ignored.";
+
+            _loadScenes.image = EditorGUIUtility.IconContent("UnityEditor.HierarchyWindow").image;
+            _loadScenes.text = "Load Scenes";
+            _loadScenes.tooltip = "Load all the Scenes into the Hierarchy.";
 
             // ------------------------------------------------------
 
+            RefreshProfileObject();
+
+            // ------------------------------------------------------
+
+            float lineHeight = EditorGUIUtility.GetBuiltinSkin(EditorSkin.Inspector).textField.lineHeight + 6;
+
             _scenesReorderableList = new ReorderableList(_sceneListObject, null,
-                true, true, true, true);
+                true, true, true, true)
+            {
+                elementHeight = lineHeight,
+                drawHeaderCallback = DrawSceneListHeader,
+                drawElementCallback = DrawSceneElement,
+                drawElementBackgroundCallback = DrawSceneElementBg,
+                drawFooterCallback = DrawSceneFooter,
+                onAddCallback = OnAddScene,
+                //onAddDropdownCallback = OnAddSceneDropdown,
+                onRemoveCallback = OnRemoveScene,
+                onReorderCallbackWithDetails = OnReorderScene
+            };
 
             _lastKnownScriptingDefineListObject = _scriptingDefineListProperty.objectReferenceValue;
-            RefreshProfileObject();
             RefreshSceneListObject();
 
             // ------------------------------------------------------
 
             _scriptingDefineReorderableList = new ReorderableList(serializedObject, _enabledScriptDefinesProperty,
-                true, true, true, true);
-
-            _scriptingDefineReorderableList.elementHeight = EditorGUIUtility.GetBuiltinSkin(EditorSkin.Inspector).textField.lineHeight + 6;
-            _scriptingDefineReorderableList.drawHeaderCallback = DrawScriptingDefineHeader;
-            _scriptingDefineReorderableList.drawElementCallback = DrawScriptDefineElement;
-
-            _scriptingDefineReorderableList.onAddCallback = OnAddScriptDefine;
-            _scriptingDefineReorderableList.onRemoveCallback = OnRemoveScriptDefine;
-            _scriptingDefineReorderableList.onReorderCallbackWithDetails = OnReorderScriptDefine;
+                true, true, true, true)
+            {
+                elementHeight = lineHeight,
+                drawHeaderCallback = DrawScriptingDefineHeader,
+                drawElementCallback = DrawScriptDefineElement,
+                drawElementBackgroundCallback = DrawScriptDefineElementBg,
+                onAddCallback = OnAddScriptDefine,
+                onRemoveCallback = OnRemoveScriptDefine,
+                onReorderCallbackWithDetails = OnReorderScriptDefine
+            };
 
             serializedObject.Update();
             RefreshScriptDefineList();
             serializedObject.ApplyModifiedProperties();
 
+            EditorApplication.update += OnUpdate;
+
             // ------------------------------------------------------
+        }
+
+        void OnDestroy()
+        {
+            EditorApplication.update -= OnUpdate;
         }
 
         void RefreshScriptDefineList()
@@ -136,24 +242,49 @@ namespace BuildFrontend
             var scriptingDefineListObject = new SerializedObject(_scriptingDefineListProperty.objectReferenceValue);
             var scriptingDefinesProperty = scriptingDefineListObject.FindProperty(nameof(ScriptingDefineList.ScriptingDefines));
 
-            while (_enabledScriptDefinesProperty.arraySize < scriptingDefinesProperty.arraySize)
+            List<(int idx, string name)> definesToAdd = null;
+            for (int n = 0, len = scriptingDefinesProperty.arraySize; n < len; ++n)
             {
-                _enabledScriptDefinesProperty.InsertArrayElementAtIndex(0);
+                var elementThatNeedsToBePresent = scriptingDefinesProperty.GetArrayElementAtIndex(n);
+
+                string defineThatNeedsToBePresent = elementThatNeedsToBePresent.stringValue;
+                if (!ArrayPropertyContains(_enabledScriptDefinesProperty, nameof(BuildTemplate.ScriptDefine.DefineName), defineThatNeedsToBePresent))
+                {
+                    definesToAdd ??= new List<(int idx, string name)>();
+                    definesToAdd.Add((n, defineThatNeedsToBePresent));
+                }
+            }
+
+            if (definesToAdd != null && definesToAdd.Count > 0)
+            {
+                for (int i = 0, iLen = definesToAdd.Count; i < iLen; ++i)
+                {
+                    (int idxItNeedsToBeIn, string defineToAdd) = definesToAdd[i];
+
+                    int addedElementIdx = _enabledScriptDefinesProperty.arraySize;
+                    _enabledScriptDefinesProperty.InsertArrayElementAtIndex(addedElementIdx);
+                    var addedElement = _enabledScriptDefinesProperty.GetArrayElementAtIndex(addedElementIdx);
+                    var addedElementName =
+                        addedElement.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.DefineName));
+                    addedElementName.stringValue = defineToAdd;
+                    var addedElementEnable =
+                        addedElement.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.Enable));
+                    addedElementEnable.boolValue = true;
+
+                    _enabledScriptDefinesProperty.MoveArrayElement(addedElementIdx, idxItNeedsToBeIn);
+                }
             }
 
             for (int n = 0, len = scriptingDefinesProperty.arraySize; n < len; ++n)
             {
-                var elementOther = scriptingDefinesProperty.GetArrayElementAtIndex(n);
+                var elementThatNeedsToBePresent = scriptingDefinesProperty.GetArrayElementAtIndex(n);
+                string defineThatNeedsToBePresent = elementThatNeedsToBePresent.stringValue;
 
-                var elementMine = _enabledScriptDefinesProperty.GetArrayElementAtIndex(n);
+                int whereDefineIs = ArrayPropertyIndexOf(_enabledScriptDefinesProperty, nameof(BuildTemplate.ScriptDefine.DefineName), defineThatNeedsToBePresent);
 
-                var elementMineName = elementMine.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.DefineName));
-
-                if (elementMineName.stringValue != elementOther.stringValue)
+                if (whereDefineIs != n)
                 {
-                    elementMineName.stringValue = elementOther.stringValue;
-                    var elementEnabled = elementMine.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.Enable));
-                    elementEnabled.boolValue = true;
+                    _enabledScriptDefinesProperty.MoveArrayElement(whereDefineIs, n);
                 }
             }
         }
@@ -192,15 +323,6 @@ namespace BuildFrontend
             _scenesProperty = _sceneListObject.FindProperty(nameof(SceneList.Scenes));
 
             _scenesReorderableList.serializedProperty = _scenesProperty;
-
-            _scenesReorderableList.elementHeight =
-                EditorGUIUtility.GetBuiltinSkin(EditorSkin.Inspector).textField.lineHeight + 6;
-            _scenesReorderableList.drawHeaderCallback = DrawSceneListHeader;
-            _scenesReorderableList.drawElementCallback = DrawSceneElement;
-
-            _scenesReorderableList.onAddCallback = OnAddScene;
-            _scenesReorderableList.onRemoveCallback = OnRemoveScene;
-            _scenesReorderableList.onReorderCallbackWithDetails = OnReorderScene;
         }
 
         // =================================================================================
@@ -209,6 +331,40 @@ namespace BuildFrontend
         static void _DrawSceneListHeader(Rect rect)
         {
             EditorGUI.LabelField(rect, "Scenes");
+        }
+
+        ReorderableList.FooterCallbackDelegate DrawSceneFooter => _DrawSceneListFooter;
+        void _DrawSceneListFooter(Rect rect)
+        {
+            // to draw the plus & minus buttons:
+            ReorderableList.defaultBehaviours.DrawFooter(rect, _scenesReorderableList);
+
+            const int width = 98;
+            const int plusMinusButtonsWidth = 80;
+            if (UnityEngine.Event.current.type == UnityEngine.EventType.Repaint)
+            {
+                var rectBg = new Rect(rect.xMax - plusMinusButtonsWidth - width, rect.y, width + 8, rect.height);
+                ReorderableList.defaultBehaviours.footerBackground.Draw(rectBg, false, false, false, false);
+            }
+
+            bool prevEnabled = GUI.enabled;
+            GUI.enabled = prevEnabled &&
+                          _sceneListProperty.objectReferenceValue != null &&
+                          ((SceneList) _sceneListProperty.objectReferenceValue).HasAtLeastOneLoadableScene &&
+                          _scenesProperty != null && _scenesProperty.arraySize > 0;
+
+            Rect loadScenesRect = new Rect(rect.xMax - plusMinusButtonsWidth - width + 4, rect.y, width, 16f);
+            if (GUI.Button(loadScenesRect, _loadScenes, ReorderableList.defaultBehaviours.preButton))
+            {
+                if (EditorUtility.DisplayDialog("Load all scenes?",
+                    "This will load all scenes in the Scene List, and close all currently opened scenes that are not in the list.",
+                    "Yes", "No") && EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+                {
+                    _wantToLoad = true;
+                }
+            }
+
+            GUI.enabled = prevEnabled;
         }
 
         // ------------------------------------------------------
@@ -225,6 +381,9 @@ namespace BuildFrontend
             }
 
             _scenesProperty.InsertArrayElementAtIndex(idx);
+
+            var addedElement = _scenesProperty.GetArrayElementAtIndex(idx);
+            addedElement.objectReferenceValue = null;
         }
 
         // ------------------------------------------------------
@@ -245,10 +404,31 @@ namespace BuildFrontend
 
         // ------------------------------------------------------
 
+
+        ReorderableList.ElementCallbackDelegate DrawSceneElementBg => _DrawSceneElementBg;
+        void _DrawSceneElementBg(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            if (Event.current.type != EventType.Repaint)
+                return;
+
+            var element = _scenesReorderableList.serializedProperty.GetArrayElementAtIndex(index);
+
+            int firstIdx = ArrayPropertyIndexOf(_scenesProperty, element.objectReferenceValue);
+            bool duplicate = firstIdx != -1 && firstIdx != index;
+
+            var bgStyle = duplicate
+                ? _skin.FindStyle("RL Warning Background")
+                : ReorderableList.defaultBehaviours.elementBackground;
+            bgStyle.Draw(rect, false, isActive, isActive, isFocused);
+        }
+
         ReorderableList.ElementCallbackDelegate DrawSceneElement => _DrawSceneElement;
         void _DrawSceneElement(Rect rect, int index, bool isActive, bool isFocused)
         {
             var element = _scenesReorderableList.serializedProperty.GetArrayElementAtIndex(index);
+
+            int firstIdx = ArrayPropertyIndexOf(_scenesProperty, element.objectReferenceValue);
+            bool duplicate = firstIdx != -1 && firstIdx != index;
 
             CalcSize.text = "99";
             EditorGUIUtility.labelWidth = EditorStyles.label.CalcSize(CalcSize).x + 5;
@@ -256,7 +436,17 @@ namespace BuildFrontend
             _label.image = null;
             _label.text = index.ToString();
 
-            EditorGUI.PropertyField(new Rect(rect.x, rect.y + 2, rect.width, rect.height - 4), element, _label);
+            var sceneRect = new Rect(rect.x, rect.y + 2, rect.width, rect.height - 4);
+            if (duplicate)
+            {
+                sceneRect.xMax -= 26;
+            }
+            EditorGUI.PropertyField(sceneRect, element, _label);
+
+            if (duplicate)
+            {
+                GUI.Label(new Rect(rect.xMax - 20, rect.y + 2, 20, 19), _duplicateSceneLabel);
+            }
         }
 
         // =================================================================================
@@ -347,31 +537,112 @@ namespace BuildFrontend
 
         // ------------------------------------------------------
 
+        ReorderableList.ElementCallbackDelegate DrawScriptDefineElementBg => _DrawScriptDefineElementBg;
+        void _DrawScriptDefineElementBg(Rect rect, int index, bool isActive, bool isFocused)
+        {
+            if (Event.current.type != EventType.Repaint || index < 0)
+            {
+                return;
+            }
+
+            var element = _enabledScriptDefinesProperty.GetArrayElementAtIndex(index);
+            var nameProperty = element.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.DefineName));
+
+            int firstIdx = ArrayPropertyIndexOf(_enabledScriptDefinesProperty,
+                nameof(BuildTemplate.ScriptDefine.DefineName), nameProperty.stringValue);
+            bool duplicate = firstIdx != -1 && firstIdx != index;
+
+            var bgStyle = duplicate
+                ? _skin.FindStyle("RL Warning Background")
+                : ReorderableList.defaultBehaviours.elementBackground;
+            bgStyle.Draw(rect, false, isActive, isActive, isFocused);
+        }
+
         ReorderableList.ElementCallbackDelegate DrawScriptDefineElement => _DrawScriptDefineElement;
         void _DrawScriptDefineElement(Rect rect, int index, bool isActive, bool isFocused)
         {
-            var element = _scriptingDefineReorderableList.serializedProperty.GetArrayElementAtIndex(index);
+            var element = _enabledScriptDefinesProperty.GetArrayElementAtIndex(index);
 
             var enabledProperty = element.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.Enable));
             var nameProperty = element.FindPropertyRelative(nameof(BuildTemplate.ScriptDefine.DefineName));
 
-            EditorGUI.PropertyField(new Rect(rect.x, rect.y, 20, rect.height), enabledProperty, GUIContent.none);
-            var prevName = nameProperty.stringValue;
-            EditorGUI.PropertyField(new Rect(rect.x+20, rect.y + 2, rect.width - 20, rect.height - 4), nameProperty, GUIContent.none);
-            if (prevName != nameProperty.stringValue)
+            SerializedObject scriptingDefineListObject;
+            SerializedProperty scriptingDefinesProperty;
+            if (_scriptingDefineListProperty.objectReferenceValue != null)
             {
-                if (_scriptingDefineListProperty.objectReferenceValue != null)
-                {
-                    var scriptingDefineListObject = new SerializedObject(_scriptingDefineListProperty.objectReferenceValue);
-                    var scriptingDefinesProperty = scriptingDefineListObject.FindProperty(nameof(ScriptingDefineList.ScriptingDefines));
+                scriptingDefineListObject = new SerializedObject(_scriptingDefineListProperty.objectReferenceValue);
+                scriptingDefinesProperty = scriptingDefineListObject.FindProperty(nameof(ScriptingDefineList.ScriptingDefines));
+            }
+            else
+            {
+                scriptingDefineListObject = null;
+                scriptingDefinesProperty = null;
+            }
 
+            int idxInScriptingDefineList = -1;
+            if (scriptingDefineListObject != null && scriptingDefinesProperty != null)
+            {
+                idxInScriptingDefineList = ArrayPropertyIndexOf(scriptingDefinesProperty, nameProperty.stringValue);
+            }
+
+            int firstIdx = ArrayPropertyIndexOf(_enabledScriptDefinesProperty,
+                nameof(BuildTemplate.ScriptDefine.DefineName), nameProperty.stringValue);
+            bool duplicate = firstIdx != -1 && firstIdx != index;
+
+            // ------------------------------------------------------
+
+            EditorGUI.PropertyField(new Rect(rect.x, rect.y, 20, rect.height), enabledProperty, GUIContent.none);
+
+            var nameRect = new Rect(rect.x + 20, rect.y + 2, rect.width - 20, rect.height - 4);
+            if (idxInScriptingDefineList == -1)
+            {
+                nameRect.width -= 26;
+            }
+
+            if (duplicate)
+            {
+                nameRect.width -= 26;
+            }
+
+            var prevName = nameProperty.stringValue;
+            EditorGUI.PropertyField(nameRect, nameProperty, GUIContent.none);
+            if (prevName != nameProperty.stringValue &&
+                scriptingDefineListObject != null &&
+                scriptingDefinesProperty != null &&
+                idxInScriptingDefineList == index)
+            {
+                scriptingDefineListObject.Update();
+
+                var elementOther = scriptingDefinesProperty.GetArrayElementAtIndex(index);
+                elementOther.stringValue = nameProperty.stringValue;
+
+                scriptingDefineListObject.ApplyModifiedProperties();
+            }
+
+            if (idxInScriptingDefineList == -1 && scriptingDefineListObject != null && scriptingDefinesProperty != null)
+            {
+                var plusRect = new Rect(rect.xMax - 20, rect.y + 2, 20, 19);
+                if (duplicate)
+                {
+                    plusRect.x -= 26;
+                }
+
+                if (GUI.Button(plusRect, _addDefineLabel, BuildFrontend.Styles.MiniIconButton))
+                {
                     scriptingDefineListObject.Update();
 
-                    var elementOther = scriptingDefinesProperty.GetArrayElementAtIndex(index);
-                    elementOther.stringValue = nameProperty.stringValue;
+                    int addIdx = scriptingDefinesProperty.arraySize;
+                    scriptingDefinesProperty.InsertArrayElementAtIndex(addIdx);
+                    var addedElement = scriptingDefinesProperty.GetArrayElementAtIndex(addIdx);
+                    addedElement.stringValue = nameProperty.stringValue;
 
                     scriptingDefineListObject.ApplyModifiedProperties();
                 }
+            }
+
+            if (duplicate)
+            {
+                GUI.Label(new Rect(rect.xMax - 20, rect.y + 2, 20, 19), _duplicateDefineLabel);
             }
         }
 
@@ -469,6 +740,19 @@ namespace BuildFrontend
             CalcSize.text = customLabel;
             EditorGUIUtility.labelWidth = EditorStyles.label.CalcSize(CalcSize).x + 10;
             EditorGUILayout.PropertyField(property, options);
+        }
+
+        bool _wantToLoad;
+
+        UnityEditor.EditorApplication.CallbackFunction OnUpdate => _OnUpdate;
+        void _OnUpdate()
+        {
+            if (_wantToLoad)
+            {
+                _wantToLoad = false;
+                var sceneList = (SceneList) _sceneListProperty.objectReferenceValue;
+                EditorSceneManager.RestoreSceneManagerSetup(sceneList.SceneSetup);
+            }
         }
 
         void DrawProfileProperties()

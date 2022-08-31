@@ -147,6 +147,98 @@ namespace BuildFrontend
                         buildOptions.options |= BuildOptions.CompressWithLz4HC;
                         break;
                 }
+                // -----------------------
+
+                static bool Contains(IList<ScriptDefine> array, string valueToCheck)
+                {
+                    for (int i = 0, iLen = array.Count; i < iLen; ++i)
+                    {
+                        if (array[i].DefineName == valueToCheck)
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+
+                static int IndexOf(IList<ScriptDefine> array, string valueToCheck)
+                {
+                    for (int i = 0, iLen = array.Count; i < iLen; ++i)
+                    {
+                        if (array[i].DefineName == valueToCheck)
+                        {
+                            return i;
+                        }
+                    }
+
+                    return -1;
+                }
+
+                static void Swap(IList<ScriptDefine> array, int idxA, int idxB)
+                {
+                    var temp = array[idxA];
+                    array[idxA] = array[idxB];
+                    array[idxB] = temp;
+                }
+
+                if (ScriptingDefineList != null)
+                {
+                    // ScriptingDefineList acts as a global Scripting Define List,
+                    // so any define in there that we don't have yet in the
+                    // EnabledScriptDefines array needs to be added.
+
+                    List<(int idx, string name)> definesToAdd = null;
+
+                    for (int n = 0, len = ScriptingDefineList.ScriptingDefines.Length; n < len; ++n)
+                    {
+                        string defineThatNeedsToBePresent = ScriptingDefineList.ScriptingDefines[n];
+                        if (!Contains(EnabledScriptDefines, defineThatNeedsToBePresent))
+                        {
+                            definesToAdd ??= new List<(int idx, string name)>();
+                            definesToAdd.Add((n, defineThatNeedsToBePresent));
+                        }
+                    }
+
+                    bool anyModificationDone = false;
+                    if (definesToAdd != null && definesToAdd.Count > 0)
+                    {
+                        var newDefines = new ScriptDefine[EnabledScriptDefines.Length + definesToAdd.Count];
+
+                        for (int i = 0, iLen = EnabledScriptDefines.Length; i < iLen; ++i)
+                        {
+                            newDefines[i] = EnabledScriptDefines[i];
+                        }
+
+                        for (int i = 0, iLen = definesToAdd.Count; i < iLen; ++i)
+                        {
+                            newDefines[i + EnabledScriptDefines.Length] = new ScriptDefine
+                            {
+                                DefineName = definesToAdd[i].name,
+                                Enable = true
+                            };
+                        }
+
+                        EnabledScriptDefines = newDefines;
+                        anyModificationDone = true;
+                    }
+
+                    for (int n = 0, len = ScriptingDefineList.ScriptingDefines.Length; n < len; ++n)
+                    {
+                        string defineThatNeedsToBePresent = ScriptingDefineList.ScriptingDefines[n];
+                        int whereDefineIs = IndexOf(EnabledScriptDefines, defineThatNeedsToBePresent);
+                        if (whereDefineIs != n)
+                        {
+                            Swap(EnabledScriptDefines, whereDefineIs, n);
+                            anyModificationDone = true;
+                        }
+                    }
+
+                    if (anyModificationDone)
+                    {
+                        EditorUtility.SetDirty(this);
+                    }
+                }
 
                 // -----------------------
 
@@ -155,6 +247,13 @@ namespace BuildFrontend
                 {
                     if (!EnabledScriptDefines[n].Enable)
                     {
+                        continue;
+                    }
+
+                    int firstIdx = IndexOf(EnabledScriptDefines, EnabledScriptDefines[n].DefineName);
+                    if (firstIdx != -1 && firstIdx != n)
+                    {
+                        // this is a duplicate
                         continue;
                     }
 
@@ -191,7 +290,32 @@ namespace BuildFrontend
                     Directory.CreateDirectory(buildPath);
                 }
 
-                buildOptions.locationPathName = Path.Combine(buildPath, ExecutableName);
+                string executableFilename;
+                if (string.IsNullOrEmpty(ExecutableName))
+                {
+                    if (Profile.Target is BuildTarget.StandaloneWindows or BuildTarget.StandaloneWindows64)
+                    {
+                        executableFilename = $"{Application.productName}.exe";
+                    }
+                    else
+                    {
+                        executableFilename = Application.productName;
+                    }
+                }
+                else
+                {
+                    if ((Profile.Target is BuildTarget.StandaloneWindows or BuildTarget.StandaloneWindows64) &&
+                        !ExecutableName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        executableFilename = $"{ExecutableName}.exe";
+                    }
+                    else
+                    {
+                        executableFilename = ExecutableName;
+                    }
+                }
+
+                buildOptions.locationPathName = Path.Combine(buildPath, executableFilename);
 
                 // -----------------------
 
